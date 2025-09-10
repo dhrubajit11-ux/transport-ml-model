@@ -5,6 +5,9 @@ from flask import Flask, request, jsonify
 import numpy as np
 import logging
 
+from sklearn.metrics import accuracy_score
+
+
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -12,6 +15,7 @@ logging.basicConfig(level=logging.INFO)
 model = None
 le = None
 feature_names = None
+
 
 def train_model():
     global model, le, feature_names
@@ -40,6 +44,11 @@ def train_model():
         return False
     
     return True
+=======
+@app.route('/')
+def home():
+    return "🚀 Transport Mode Prediction API is running!"
+>>>>>>> 63a0d2a0537295d1dfe6a6d3713c4eeb41f383cc
 
 @app.route('/predict', methods=['POST'])
 def predict():
@@ -47,6 +56,7 @@ def predict():
         return jsonify({"error": "Model not trained. Please check the server logs."}), 500
         
     try:
+<<<<<<< HEAD
         # Get data from Postman request
         data = request.get_json(force=True)
         
@@ -80,6 +90,50 @@ def predict():
         return jsonify({"error": f"Missing feature in JSON payload: {e}"}), 400
     except Exception as e:
         return jsonify({"error": f"An error occurred during prediction: {e}"}), 500
+=======
+        # Get JSON data from request
+        data = request.get_json()
+
+        # Ensure it's a list of records
+        if not isinstance(data, list):
+            return jsonify({"error": "Input data must be a list of JSON objects"}), 400
+
+        # Convert JSON to DataFrame
+        df = pd.DataFrame(data)
+
+        # Ensure 'target' column is present
+        if 'target' not in df.columns:
+            return jsonify({"error": "Missing 'target' column in input data"}), 400
+
+        # Separate features and target
+        X = df.drop(columns=['target'])
+        y = df['target']
+
+        # Predict using the model
+        predictions = model.predict(X)
+
+        # Check correctness
+        correctness = (predictions == y).astype(int)
+
+        # Calculate overall accuracy
+        overall_accuracy = accuracy_score(y, predictions)
+
+        # Build results
+        results = pd.DataFrame({
+            "Actual": y,
+            "Predicted": predictions,
+            "Correct(1)/Incorrect(0)": correctness
+        })
+
+        return jsonify({
+            "overall_accuracy": round(overall_accuracy * 100, 2),
+            "results": results.to_dict(orient="records")
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+>>>>>>> 63a0d2a0537295d1dfe6a6d3713c4eeb41f383cc
 
 if __name__ == '__main__':
     if train_model():
