@@ -47,7 +47,6 @@ def train_model():
 @app.route('/')
 def home():
     return "🚀 Transport Mode Prediction API is running!"
->>>>>>> 63a0d2a0537295d1dfe6a6d3713c4eeb41f383cc
 
 @app.route('/predict', methods=['POST'])
 def predict():
