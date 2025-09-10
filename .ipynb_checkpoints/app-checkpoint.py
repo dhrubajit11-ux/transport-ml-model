@@ -14,14 +14,28 @@ def home():
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
-        # Get JSON data from request
+        # Get JSON data
         data = request.get_json()
         input_data = pd.DataFrame([data])
 
-        # Predict using the model
+        # Get prediction and probability
         prediction = model.predict(input_data)
+        prediction_proba = model.predict_proba(input_data)
 
-        return jsonify({"prediction": prediction[0]})
+        # Find the index of the predicted class
+        predicted_class_index = list(model.classes_).index(prediction[0])
+
+        # Get confidence score (as percentage)
+        confidence = prediction_proba[0][predicted_class_index] * 100
+
+        return jsonify({
+            "results": [
+                {
+                    "Prediction": prediction[0],
+                    "Accuracy": f"{confidence:.2f}%"
+                }
+            ]
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
