@@ -50,9 +50,13 @@ def home():
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    if model is None:
-        return jsonify({"error": "Model not trained. Please check the server logs."}), 500
-        
+    try:
+        data = request.get_json()
+        features = [data["feature1"], data["feature2"], data["feature3"]]
+        prediction = model.predict([features])
+        return {"prediction": prediction.tolist()}
+    except Exception as e:
+        return {"error": str(e)}, 500
     try:
 
         # Get data from Postman request
