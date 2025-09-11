@@ -8,7 +8,7 @@ import logging
 from sklearn.metrics import accuracy_score
 
 
-app = Flask(__name__)
+app = Flask(_name_)
 logging.basicConfig(level=logging.INFO)
 
 # Global variables for the model and label encoder
@@ -50,13 +50,9 @@ def home():
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    try:
-        data = request.get_json()
-        features = [data["feature1"], data["feature2"], data["feature3"]]
-        prediction = model.predict([features])
-        return {"prediction": prediction.tolist()}
-    except Exception as e:
-        return {"error": str(e)}, 500
+    if model is None:
+        return jsonify({"error": "Model not trained. Please check the server logs."}), 500
+        
     try:
 
         # Get data from Postman request
@@ -134,6 +130,6 @@ def predict():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-if __name__ == '__main__':
+if _name_ == '_main_':
     if train_model():
         app.run(debug=False)
