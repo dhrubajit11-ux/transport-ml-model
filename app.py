@@ -22,9 +22,7 @@ class_map = {
     4: "Walking"
 }
 
-# ===========================
 # Load trained model
-# ===========================
 try:
     model = joblib.load(MODEL_PATH)
     print("Model loaded successfully!")
@@ -32,49 +30,8 @@ except Exception as e:
     print(f"Error loading model: {e}")
     model = None
 
-# ===========================
-# Load test data and calculate real-world accuracy
-# ===========================
-real_accuracy = None
-target_column = None
 
-try:
-    test_df = pd.read_csv(TEST_DATA_PATH)
-    print("Columns in data1.csv:", test_df.columns.tolist())
-
-    # Detect target column automatically
-    possible_target_cols = ["target", "activity", "label", "Transport_Mode"]
-    for col in possible_target_cols:
-        if col in test_df.columns:
-            target_column = col
-            break
-
-    # If not found, assume last column is target
-    if target_column is None:
-        target_column = test_df.columns[-1]
-
-    print(f"Detected target column: {target_column}")
-
-    # Split into features and target
-    X_test = test_df.drop(columns=[target_column])
-    y_test = test_df[target_column]
-
-    # Make predictions on the entire test set
-    y_pred = model.predict(X_test)
-
-    # Calculate accuracy
-    acc_value = accuracy_score(y_test, y_pred) * 100
-    real_accuracy = round(acc_value, 2)
-    print(f"Real-world accuracy: {real_accuracy}%")
-
-except Exception as e:
-    print(f"Error loading test data: {e}")
-    real_accuracy = None
-
-
-# ===========================
 # ROUTES
-# ===========================
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({"message": "Transport ML Model API is running!"})
@@ -116,13 +73,33 @@ def predict():
         # Prepare features for prediction
         features = np.array([[data[key] for key in required_keys]])
 
-        # Predict label
+        # Predict label for input
         pred_numeric = model.predict(features)[0]
         pred_label = class_map.get(pred_numeric, "Unknown")
 
-        # Format accuracy nicely
-        formatted_accuracy = f"{real_accuracy}%" if real_accuracy is not None else "N/A"
+        # ===========================
+        # Calculate real-world accuracy dynamically
+        # ===========================
+        try:
+            test_df = pd.read_csv(TEST_DATA_PATH)
 
+            # Detect target column
+            possible_target_cols = ["target", "activity", "label", "Transport_Mode"]
+            target_column = next((col for col in possible_target_cols if col in test_df.columns), None)
+            if target_column is None:
+                target_column = test_df.columns[-1]
+
+            X_test = test_df.drop(columns=[target_column])
+            y_test = test_df[target_column]
+
+            y_pred = model.predict(X_test)
+            real_accuracy = accuracy_score(y_test, y_pred) * 100
+            formatted_accuracy = f"{real_accuracy:.2f}%"
+
+        except Exception as e:
+            formatted_accuracy = "N/A"
+
+        # Return JSON
         return jsonify({
             "accuracy": formatted_accuracy,
             "prediction": pred_label
@@ -132,9 +109,7 @@ def predict():
         return jsonify({"error": f"Prediction error: {str(e)}"}), 500
 
 
-# ===========================
 # Run Flask app
-# ===========================
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
