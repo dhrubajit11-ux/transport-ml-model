@@ -78,7 +78,7 @@ except Exception as e:
 
 @app.route("/", methods=["GET"])
 def home():
-    return jsonify({"message": "🚀 Transport ML Model API is running!"})
+    return jsonify({"message": "Transport ML Model API is running"})
 
 @app.route("/predict", methods=["POST"])
 def predict():
