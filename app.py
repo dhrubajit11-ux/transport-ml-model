@@ -82,6 +82,6 @@ def predict():
         return jsonify({"error": f"An error occurred during prediction: {e}"}), 500
 
 
-if _name_ == '_main_': 
+if __name__ == '__main__': 
     if train_model():
         app.run(debug=True)  
