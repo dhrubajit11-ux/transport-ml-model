@@ -11,7 +11,7 @@ app = Flask(__name__)
 # Base paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "transport_model.pkl")
-TEST_DATA_PATH = os.path.join(BASE_DIR, "test.csv")
+TEST_DATA_PATH = os.path.join(BASE_DIR, "data1.csv")
 
 # Map numeric predictions to human-readable labels
 class_map = {
