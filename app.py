@@ -11,9 +11,9 @@ app = Flask(__name__)
 # Base directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "transport_model.pkl")
-TEST_DATA_PATH = os.path.join(BASE_DIR, "data1.csv")
+TEST_DATA_PATH = os.path.join(BASE_DIR, "test.csv")
 
-# Map numeric predictions to labels
+# Map numeric predictions to human-readable labels
 class_map = {
     0: "Bus",
     1: "Car",
@@ -23,7 +23,7 @@ class_map = {
 }
 
 # ===========================
-# Load ML model
+# Load trained ML model
 # ===========================
 try:
     model = joblib.load(MODEL_PATH)
@@ -33,27 +33,24 @@ except Exception as e:
     model = None
 
 # ===========================
-# Load test data to calculate real-world accuracy
+# Load test.csv and calculate real-world accuracy
 # ===========================
 real_accuracy = None
 target_column = None
 
 try:
-    # Load test.csv
     test_df = pd.read_csv(TEST_DATA_PATH)
     print("Columns in test.csv:", test_df.columns.tolist())
 
-    # Automatically detect target column
-    # We assume the target column is the last one OR named 'target' or 'activity'
-    possible_target_cols = ["target", "activity"]
+    # Identify target column
+    possible_target_cols = ["target", "activity", "label", "Transport_Mode"]
 
-    # If known columns exist, use them
     for col in possible_target_cols:
         if col in test_df.columns:
             target_column = col
             break
 
-    # If none matched, take the last column as target
+    # If not found, assume last column is the target
     if target_column is None:
         target_column = test_df.columns[-1]
 
@@ -63,9 +60,11 @@ try:
     X_test = test_df.drop(columns=[target_column])
     y_test = test_df[target_column]
 
-    # Predict and calculate accuracy
+    # Make predictions
     y_pred = model.predict(X_test)
-    real_accuracy = accuracy_score(y_test, y_pred) * 100
+
+    # Calculate accuracy
+    real_accuracy = round(accuracy_score(y_test, y_pred) * 100, 2)
     print(f"Real-world accuracy: {real_accuracy:.2f}%")
 
 except Exception as e:
@@ -74,7 +73,7 @@ except Exception as e:
 
 
 # ===========================
-# ROUTES
+# API ROUTES
 # ===========================
 @app.route("/", methods=["GET"])
 def home():
@@ -106,7 +105,7 @@ def predict():
             "sound#std"
         ]
 
-        # Check if any required field is missing
+        # Check missing fields
         missing_keys = [key for key in required_keys if key not in data]
         if missing_keys:
             return jsonify({
@@ -114,16 +113,16 @@ def predict():
                 "missing_keys": missing_keys
             }), 400
 
-        # Prepare input for prediction
+        # Prepare input
         features = np.array([[data[key] for key in required_keys]])
 
-        # Predict
+        # Make single prediction
         pred_numeric = model.predict(features)[0]
         pred_label = class_map.get(pred_numeric, "Unknown")
 
         # Build response
         response = {
-            "accuracy": round(real_accuracy, 2) if real_accuracy is not None else "N/A",
+            "accuracy": f"{real_accuracy}%" if real_accuracy is not None else "N/A",
             "prediction": pred_label
         }
 
@@ -134,7 +133,7 @@ def predict():
 
 
 # ===========================
-# Run the app
+# Run Flask app
 # ===========================
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
