@@ -24,9 +24,9 @@ reverse_class_map = {v: k for k, v in class_map.items()}
 
 try:
     model = joblib.load(MODEL_PATH)
-    logging.info("✅ Model loaded successfully!")
+    logging.info(" Model loaded successfully!")
 except Exception as e:
-    logging.error(f"❌ Error loading model: {e}")
+    logging.error(f" Error loading model: {e}")
     model = None
 
 required_keys = [
