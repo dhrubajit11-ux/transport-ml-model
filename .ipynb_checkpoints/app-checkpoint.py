@@ -79,24 +79,39 @@ def predict():
         # ===========================
         # Calculate real-world accuracy dynamically
         # ===========================
+        formatted_accuracy = "N/A"
         try:
             test_df = pd.read_csv(TEST_DATA_PATH)
+            print("Columns in CSV:", test_df.columns.tolist())
 
             # Detect target column
             possible_target_cols = ["target", "activity", "label", "Transport_Mode"]
             target_column = next((col for col in possible_target_cols if col in test_df.columns), None)
             if target_column is None:
                 target_column = test_df.columns[-1]
+            print("Using target column:", target_column)
 
-            # Align features to model's expected keys and ensure numeric
-            X_test = test_df[required_keys].astype(float)
+            # Check missing features
+            missing_features = [col for col in required_keys if col not in test_df.columns]
+            if missing_features:
+                print("Missing features in CSV:", missing_features)
+                # Fill missing columns with zeros
+                for col in missing_features:
+                    test_df[col] = 0
+
+            # Align features and convert to float safely
+            X_test = test_df[required_keys].copy()
+            X_test = X_test.apply(pd.to_numeric, errors='coerce').fillna(0)
             y_test = test_df[target_column]
 
+            # Predict and calculate accuracy
             y_pred = model.predict(X_test)
             real_accuracy = accuracy_score(y_test, y_pred) * 100
             formatted_accuracy = f"{real_accuracy:.2f}%"
+            print("Calculated real-world accuracy:", formatted_accuracy)
 
         except Exception as e:
+            print("Accuracy calculation error:", e)
             formatted_accuracy = "N/A"
 
         # Return JSON
