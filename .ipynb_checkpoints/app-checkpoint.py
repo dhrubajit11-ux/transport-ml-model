@@ -1,149 +1,131 @@
-import os
-import joblib
-import numpy as np
 import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
 from flask import Flask, request, jsonify
-from sklearn.metrics import accuracy_score
+import numpy as np
 import logging
 
-# Initialize Flask
-app = Flask(__name__)
+from sklearn.metrics import accuracy_score
+
+
+app = Flask(_name_)
 logging.basicConfig(level=logging.INFO)
 
-# Paths
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, "transport_model.pkl")
-DATA_PATH = os.path.join(BASE_DIR, "data1.csv")
+# Global variables for the model and label encoder
+model = None
+le = None
+feature_names = None
 
-# Class mapping
-class_map = {
-    0: "Bus",
-    1: "Car",
-    2: "Still",
-    3: "Train",
-    4: "Walking"
-}
-reverse_class_map = {v: k for k, v in class_map.items()}
-
-# Load model
-try:
-    model = joblib.load(MODEL_PATH)
-    logging.info("✅ Model loaded successfully!")
-except Exception as e:
-    logging.error(f"❌ Error loading model: {e}")
-    model = None
-
-# Required features
-required_keys = [
-    "time",
-    "android.sensor.accelerometer#mean",
-    "android.sensor.accelerometer#min",
-    "android.sensor.accelerometer#max",
-    "android.sensor.accelerometer#std",
-    "android.sensor.gyroscope#mean",
-    "android.sensor.gyroscope#min",
-    "android.sensor.gyroscope#max",
-    "android.sensor.gyroscope#std",
-    "sound#mean",
-    "sound#min",
-    "sound#max",
-    "sound#std"
-]
-
-# ==================================
-# Pre-calculate real-world accuracy
-# ==================================
-real_accuracy = None
-
-try:
-    # Load CSV
-    df = pd.read_csv(DATA_PATH)
-    logging.info(f"CSV Columns: {df.columns.tolist()}")
-
-    # Detect target column automatically
-    possible_targets = ["target", "activity", "label", "Transport_Mode"]
-    target_col = next((col for col in possible_targets if col in df.columns), df.columns[-1])
-    logging.info(f"Detected target column: {target_col}")
-
-    # Fill missing feature columns with 0
-    for col in required_keys:
-        if col not in df.columns:
-            logging.warning(f"Missing column in CSV, filling with 0: {col}")
-            df[col] = 0
-
-    # Separate features and target
-    X_test = df[required_keys].apply(pd.to_numeric, errors='coerce').fillna(0)
-    y_test = df[target_col]
-
-    # Map text labels to numeric if needed
-    if y_test.dtype == object or y_test.dtype == 'str':
-        logging.info("Mapping text target labels to numeric...")
-        y_test = y_test.map(reverse_class_map)
-
-    # Debug info
-    logging.info(f"Unique target column values after mapping: {y_test.unique()}")
-
-    # Make predictions
-    y_pred = model.predict(X_test)
-
-    # Calculate accuracy
-    real_accuracy_value = accuracy_score(y_test, y_pred) * 100
-    real_accuracy = round(real_accuracy_value, 2)
-    logging.info(f"Real-world model accuracy: {real_accuracy}%")
-
-except Exception as e:
-    logging.error(f"Error calculating accuracy: {e}")
-    real_accuracy = None
-
-
-# ==================================
-# Flask Routes
-# ==================================
-@app.route("/", methods=["GET"])
-def home():
-    return jsonify({"message": "🚀 Transport ML Model API is running!"})
-
-
-@app.route("/predict", methods=["POST"])
-def predict():
-    if model is None:
-        return jsonify({"error": "Model not loaded"}), 500
-
+def train_model():
+    global model, le, feature_names
+    logging.info("Starting model training process...")
+    
     try:
-        # Get JSON data
+        df = pd.read_csv('data1.csv')
+        
+        X = df.drop('target', axis=1)
+        y = df['target']
+        
+        feature_names = X.columns.tolist()
+        
+        le = LabelEncoder()
+        y_encoded = le.fit_transform(y)
+        
+        model = RandomForestClassifier(n_estimators=100, random_state=42)
+        model.fit(X, y_encoded)
+        
+        logging.info("Model training complete. Ready for predictions.")
+    except FileNotFoundError:
+        logging.error("data1.csv not found. Please ensure the file is in the same directory.")
+        return False
+    except Exception as e:
+        logging.error(f"An error occurred during training: {e}")
+        return False
+    
+    return True
+    
+@app.route('/')
+def home():
+    return "🚀 Transport Mode Prediction API is running!"
+
+@app.route('/predict', methods=['POST'])
+def predict():
+    
+        # Get data from Postman request
+        data = request.get_json(force=True)
+        
+        # Extract features and convert to DataFrame
+        # Ensure the order matches the training data
+        input_features = np.array([data[feature] for feature in feature_names]).reshape(1, -1)
+        
+        # Predict the class and the probability of that class
+        prediction_encoded = model.predict(input_features)[0]
+        prediction_proba = model.predict_proba(input_features)[0]
+        
+        # Get the confidence for the predicted class
+        confidence = prediction_proba[prediction_encoded]
+        
+        # Decode the predicted class label
+        predicted_label = le.inverse_transform([prediction_encoded])[0]
+        
+        # Format the response as a dictionary
+        response_data = {
+            "results": [
+                {
+                    "Prediction": predicted_label,
+                    "Accuracy": f"{confidence * 100:.2f}%"
+                }
+            ]
+        }
+        
+        return jsonify(response_data)
+        
+    except KeyError as e:
+        return jsonify({"error": f"Missing feature in JSON payload: {e}"}), 400
+    except Exception as e:
+        return jsonify({"error": f"An error occurred during prediction: {e}"}), 500
+        # Get JSON data from request
         data = request.get_json()
 
-        # Validate required features
-        missing_keys = [key for key in required_keys if key not in data]
-        if missing_keys:
-            return jsonify({
-                "error": "Missing input fields",
-                "missing_keys": missing_keys
-            }), 400
+        # Ensure it's a list of records
+        if not isinstance(data, list):
+            return jsonify({"error": "Input data must be a list of JSON objects"}), 400
 
-        # Prepare features for prediction
-        features = np.array([[data[key] for key in required_keys]])
-        
-        # Make prediction
-        pred_numeric = model.predict(features)[0]
-        pred_label = class_map.get(pred_numeric, "Unknown")
+        # Convert JSON to DataFrame
+        df = pd.DataFrame(data)
 
-        # Return accuracy and prediction
-        formatted_accuracy = f"{real_accuracy}%" if real_accuracy is not None else "N/A"
+        # Ensure 'target' column is present
+        if 'target' not in df.columns:
+            return jsonify({"error": "Missing 'target' column in input data"}), 400
 
-        response = {
-            "accuracy": formatted_accuracy,
-            "prediction": pred_label
-        }
-        return jsonify(response)
+        # Separate features and target
+        X = df.drop(columns=['target'])
+        y = df['target']
+
+        # Predict using the model
+        predictions = model.predict(X)
+
+        # Check correctness
+        correctness = (predictions == y).astype(int)
+
+        # Calculate overall accuracy
+        overall_accuracy = accuracy_score(y, predictions)
+
+        # Build results
+        results = pd.DataFrame({
+            "Actual": y,
+            "Predicted": predictions,
+            "Correct(1)/Incorrect(0)": correctness
+        })
+
+        return jsonify({
+            "overall_accuracy": round(overall_accuracy * 100, 2),
+            "results": results.to_dict(orient="records")
+        })
 
     except Exception as e:
-        return jsonify({"error": f"Prediction error: {str(e)}"}), 500
+        return jsonify({"error": str(e)}), 500
 
-
-# ==================================
-# Run Flask App
-# ==================================
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+if _name_ == '_main_':
+    if train_model():
+        app.run(debug=False)
