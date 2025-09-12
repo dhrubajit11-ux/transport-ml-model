@@ -33,7 +33,7 @@ except Exception as e:
     logging.error(f"❌ Error loading model: {e}")
     model = None
 
-# Required features
+# Required features (must match training order)
 required_keys = [
     "time",
     "android.sensor.accelerometer#mean",
@@ -51,12 +51,10 @@ required_keys = [
 ]
 
 # ==================================
-# Pre-calculate real-world accuracy
+# Pre-calculate real-world accuracy (for logs only)
 # ==================================
 real_accuracy = None
-
 try:
-    # Load CSV
     df = pd.read_csv(DATA_PATH)
     logging.info(f"CSV Columns: {df.columns.tolist()}")
 
@@ -65,7 +63,7 @@ try:
     target_col = next((col for col in possible_targets if col in df.columns), df.columns[-1])
     logging.info(f"Detected target column: {target_col}")
 
-    # Fill missing feature columns with 0
+    # Ensure all required feature columns are present
     for col in required_keys:
         if col not in df.columns:
             logging.warning(f"Missing column in CSV, filling with 0: {col}")
@@ -75,18 +73,12 @@ try:
     X_test = df[required_keys].apply(pd.to_numeric, errors='coerce').fillna(0)
     y_test = df[target_col]
 
-    # Map text labels to numeric if needed
-    if y_test.dtype == object or y_test.dtype == 'str':
-        logging.info("Mapping text target labels to numeric...")
+    # Map string target labels to numeric if needed
+    if y_test.dtype == object or y_test.dtype == "str":
         y_test = y_test.map(reverse_class_map)
 
-    # Debug info
-    logging.info(f"Unique target column values after mapping: {y_test.unique()}")
-
-    # Make predictions
+    # Predict and calculate accuracy
     y_pred = model.predict(X_test)
-
-    # Calculate accuracy
     real_accuracy_value = accuracy_score(y_test, y_pred) * 100
     real_accuracy = round(real_accuracy_value, 2)
     logging.info(f"Real-world model accuracy: {real_accuracy}%")
@@ -95,14 +87,12 @@ except Exception as e:
     logging.error(f"Error calculating accuracy: {e}")
     real_accuracy = None
 
-
 # ==================================
 # Flask Routes
 # ==================================
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({"message": "🚀 Transport ML Model API is running!"})
-
 
 @app.route("/predict", methods=["POST"])
 def predict():
@@ -111,7 +101,7 @@ def predict():
 
     try:
         # Get JSON data
-        data = request.get_json()
+        data = request.get_json(force=True)
 
         # Validate required features
         missing_keys = [key for key in required_keys if key not in data]
@@ -123,23 +113,27 @@ def predict():
 
         # Prepare features for prediction
         features = np.array([[data[key] for key in required_keys]])
-        
-        # Make prediction
+
+        # Make prediction and get probabilities
         pred_numeric = model.predict(features)[0]
+        probabilities = model.predict_proba(features)[0]
+
+        # Calculate confidence
+        confidence = probabilities[pred_numeric]
+
+        # Map numeric prediction to label
         pred_label = class_map.get(pred_numeric, "Unknown")
 
-        # Return accuracy and prediction
-        formatted_accuracy = f"{real_accuracy}%" if real_accuracy is not None else "N/A"
-
+        # Return prediction with confidence
         response = {
-            "accuracy": formatted_accuracy,
-            "prediction": pred_label
+            "prediction": pred_label,
+            "accuracy": f"{confidence * 100:.2f}%"
         }
         return jsonify(response)
 
     except Exception as e:
+        logging.error(f"Prediction error: {e}")
         return jsonify({"error": f"Prediction error: {str(e)}"}), 500
-
 
 # ==================================
 # Run Flask App
