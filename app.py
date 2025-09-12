@@ -21,6 +21,7 @@ class_map = {
     3: "Train",
     4: "Walking"
 }
+reverse_class_map = {v: k for k, v in class_map.items()}  # For converting text targets to numbers
 
 # Load trained model
 try:
@@ -47,7 +48,6 @@ required_keys = [
     "sound#std"
 ]
 
-# ROUTES
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({"message": "Transport ML Model API is running!"})
@@ -91,21 +91,33 @@ def predict():
                 target_column = test_df.columns[-1]
             print("Using target column:", target_column)
 
-            # Check missing features
+            # Ensure all required features exist
             missing_features = [col for col in required_keys if col not in test_df.columns]
             if missing_features:
                 print("Missing features in CSV:", missing_features)
-                # Fill missing columns with zeros
                 for col in missing_features:
-                    test_df[col] = 0
+                    test_df[col] = 0  # Fill missing columns with zero
 
-            # Align features and convert to float safely
+            # Align features
             X_test = test_df[required_keys].copy()
             X_test = X_test.apply(pd.to_numeric, errors='coerce').fillna(0)
             y_test = test_df[target_column]
 
-            # Predict and calculate accuracy
+            # If target column is text, map to numbers
+            if y_test.dtype == object or y_test.dtype == 'str':
+                y_test = y_test.map(reverse_class_map)
+                print("Converted target labels to numeric")
+
+            # Predictions
             y_pred = model.predict(X_test)
+
+            # Debugging
+            print("DEBUG: First 5 rows of X_test:")
+            print(X_test.head())
+            print("DEBUG: First 5 y_test:", y_test.head())
+            print("DEBUG: First 5 y_pred:", y_pred[:5])
+
+            # Calculate accuracy
             real_accuracy = accuracy_score(y_test, y_pred) * 100
             formatted_accuracy = f"{real_accuracy:.2f}%"
             print("Calculated real-world accuracy:", formatted_accuracy)
@@ -114,7 +126,7 @@ def predict():
             print("Accuracy calculation error:", e)
             formatted_accuracy = "N/A"
 
-        # Return JSON
+        # Return JSON response
         return jsonify({
             "accuracy": formatted_accuracy,
             "prediction": pred_label
@@ -124,7 +136,6 @@ def predict():
         return jsonify({"error": f"Prediction error: {str(e)}"}), 500
 
 
-# Run Flask app
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
