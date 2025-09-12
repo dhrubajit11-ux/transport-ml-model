@@ -11,6 +11,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "transport_model.pkl")
 
 print("=== DEBUG INFO ===")
+print("NumPy version in production:", np.__version__)
 print("Current Working Directory:", os.getcwd())
 print("Files in Current Directory:", os.listdir(os.getcwd()))
 print("Absolute Model Path:", MODEL_PATH)
