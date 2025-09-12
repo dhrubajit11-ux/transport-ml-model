@@ -8,10 +8,10 @@ from sklearn.metrics import accuracy_score
 # Initialize Flask app
 app = Flask(__name__)
 
-# Base directory
+# Base paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "transport_model.pkl")
-TEST_DATA_PATH = os.path.join(BASE_DIR, "data1.csv")
+TEST_DATA_PATH = os.path.join(BASE_DIR, "test.csv")
 
 # Map numeric predictions to human-readable labels
 class_map = {
@@ -23,7 +23,7 @@ class_map = {
 }
 
 # ===========================
-# Load trained ML model
+# Load trained model
 # ===========================
 try:
     model = joblib.load(MODEL_PATH)
@@ -33,47 +33,47 @@ except Exception as e:
     model = None
 
 # ===========================
-# Load test.csv and calculate real-world accuracy
+# Load test data and calculate real-world accuracy
 # ===========================
 real_accuracy = None
 target_column = None
 
 try:
     test_df = pd.read_csv(TEST_DATA_PATH)
-    print("Columns in data1.csv:", test_df.columns.tolist())
+    print("Columns in test.csv:", test_df.columns.tolist())
 
-    # Identify target column
+    # Detect target column automatically
     possible_target_cols = ["target", "activity", "label", "Transport_Mode"]
-
     for col in possible_target_cols:
         if col in test_df.columns:
             target_column = col
             break
 
-    # If not found, assume last column is the target
+    # If not found, assume last column is target
     if target_column is None:
         target_column = test_df.columns[-1]
 
     print(f"Detected target column: {target_column}")
 
-    # Split data into features and labels
+    # Split into features and target
     X_test = test_df.drop(columns=[target_column])
     y_test = test_df[target_column]
 
-    # Make predictions
+    # Make predictions on the entire test set
     y_pred = model.predict(X_test)
 
     # Calculate accuracy
-    real_accuracy = round(accuracy_score(y_test, y_pred) * 100, 2)
-    print(f"Real-world accuracy: {real_accuracy:.2f}%")
+    acc_value = accuracy_score(y_test, y_pred) * 100
+    real_accuracy = round(acc_value, 2)
+    print(f"Real-world accuracy: {real_accuracy}%")
 
 except Exception as e:
     print(f"Error loading test data: {e}")
-    X_test, y_test, real_accuracy = None, None, None
+    real_accuracy = None
 
 
 # ===========================
-# API ROUTES
+# ROUTES
 # ===========================
 @app.route("/", methods=["GET"])
 def home():
@@ -88,7 +88,7 @@ def predict():
     try:
         data = request.get_json()
 
-        # Required feature keys
+        # Required features
         required_keys = [
             "time",
             "android.sensor.accelerometer#mean",
@@ -105,7 +105,7 @@ def predict():
             "sound#std"
         ]
 
-        # Check missing fields
+        # Validate input
         missing_keys = [key for key in required_keys if key not in data]
         if missing_keys:
             return jsonify({
@@ -113,20 +113,20 @@ def predict():
                 "missing_keys": missing_keys
             }), 400
 
-        # Prepare input
+        # Prepare features for prediction
         features = np.array([[data[key] for key in required_keys]])
 
-        # Make single prediction
+        # Predict label
         pred_numeric = model.predict(features)[0]
         pred_label = class_map.get(pred_numeric, "Unknown")
 
-        # Build response
-        response = {
-            "accuracy": f"{real_accuracy}%" if real_accuracy is not None else "N/A",
-            "prediction": pred_label
-        }
+        # Format accuracy nicely
+        formatted_accuracy = f"{real_accuracy}%" if real_accuracy is not None else "N/A"
 
-        return jsonify(response)
+        return jsonify({
+            "accuracy": formatted_accuracy,
+            "prediction": pred_label
+        })
 
     except Exception as e:
         return jsonify({"error": f"Prediction error: {str(e)}"}), 500
