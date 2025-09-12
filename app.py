@@ -11,7 +11,7 @@ app = Flask(__name__)
 # Base paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "transport_model.pkl")
-TEST_DATA_PATH = os.path.join(BASE_DIR, "data1.csv")
+TEST_DATA_PATH = os.path.join(BASE_DIR, "test.csv")
 
 # Map numeric predictions to human-readable labels
 class_map = {
@@ -30,6 +30,22 @@ except Exception as e:
     print(f"Error loading model: {e}")
     model = None
 
+# Required features (must match the model's training features)
+required_keys = [
+    "time",
+    "android.sensor.accelerometer#mean",
+    "android.sensor.accelerometer#min",
+    "android.sensor.accelerometer#max",
+    "android.sensor.accelerometer#std",
+    "android.sensor.gyroscope#mean",
+    "android.sensor.gyroscope#min",
+    "android.sensor.gyroscope#max",
+    "android.sensor.gyroscope#std",
+    "sound#mean",
+    "sound#min",
+    "sound#max",
+    "sound#std"
+]
 
 # ROUTES
 @app.route("/", methods=["GET"])
@@ -44,23 +60,6 @@ def predict():
 
     try:
         data = request.get_json()
-
-        # Required features
-        required_keys = [
-            "time",
-            "android.sensor.accelerometer#mean",
-            "android.sensor.accelerometer#min",
-            "android.sensor.accelerometer#max",
-            "android.sensor.accelerometer#std",
-            "android.sensor.gyroscope#mean",
-            "android.sensor.gyroscope#min",
-            "android.sensor.gyroscope#max",
-            "android.sensor.gyroscope#std",
-            "sound#mean",
-            "sound#min",
-            "sound#max",
-            "sound#std"
-        ]
 
         # Validate input
         missing_keys = [key for key in required_keys if key not in data]
@@ -89,7 +88,8 @@ def predict():
             if target_column is None:
                 target_column = test_df.columns[-1]
 
-            X_test = test_df.drop(columns=[target_column])
+            # Align features to model's expected keys and ensure numeric
+            X_test = test_df[required_keys].astype(float)
             y_test = test_df[target_column]
 
             y_pred = model.predict(X_test)
