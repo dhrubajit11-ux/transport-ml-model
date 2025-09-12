@@ -1,22 +1,37 @@
-import os
-import joblib
-import numpy as np
-import pandas as pd
 from flask import Flask, request, jsonify
+import pandas as pd
+import numpy as np
+import joblib
 from sklearn.metrics import accuracy_score
-from sklearn.linear_model import LogisticRegression
+import os
 
-# =========================================================
-# === Placeholder Data and Model Generation for Testing ===
-# =========================================================
-# This section creates dummy files so the Flask app can run
-# without external dependencies. In a real-world scenario,
-# you would have these files pre-trained and saved.
+app = Flask(__name__)
 
+# ==========================
+# CONFIG
+# ==========================
 MODEL_PATH = "transport_model.pkl"
 DATA_PATH = "data1.csv"
 
-# Required features for the model
+# Load the trained model
+try:
+    model = joblib.load(MODEL_PATH)
+    print("Model loaded successfully!")
+except Exception as e:
+    print("Error loading model:", str(e))
+    model = None
+
+# Class mapping
+class_map = {
+    0: "Still",
+    1: "Walk",
+    2: "Run",
+    3: "Bike",
+    4: "Train"
+}
+reverse_class_map = {v: k for k, v in class_map.items()}
+
+# Required feature keys
 required_keys = [
     "time",
     "android.sensor.accelerometer#mean",
@@ -26,65 +41,19 @@ required_keys = [
     "android.sensor.gyroscope#mean",
     "android.sensor.gyroscope#min",
     "android.sensor.gyroscope#max",
-    "android.sensor.gyroscope#std",
-    "sound#mean",
-    "sound#min",
-    "sound#max",
-    "sound#std"
+    "android.sensor.gyroscope#std"
 ]
 
-# Class mapping
-class_map = {
-    0: "Bus",
-    1: "Car",
-    2: "Still",
-    3: "Train",
-    4: "Walking"
-}
-reverse_class_map = {v: k for k, v in class_map.items()}
-
-# Generate a dummy model and data if files don't exist
-if not os.path.exists(MODEL_PATH) or not os.path.exists(DATA_PATH):
-    print("Generating dummy model and data files for demonstration...")
-    
-    # Create dummy data
-    data = np.random.rand(100, len(required_keys))
-    # Create a simple target column where y = 0 if first feature is low, 1 otherwise
-    targets = (data[:, 1] > 0.5).astype(int)
-    
-    df = pd.DataFrame(data, columns=required_keys)
-    df['target'] = targets
-    df.to_csv(DATA_PATH, index=False)
-    
-    # Create and train a dummy model
-    dummy_model = LogisticRegression()
-    dummy_model.fit(df[required_keys], df['target'])
-    
-    # Save the dummy model
-    joblib.dump(dummy_model, MODEL_PATH)
-    print("Dummy files generated successfully!")
-
-
-# =========================================================
-# === Flask Application Start ===
-# =========================================================
-app = Flask(__name__)
-
-# Load model
-model = None
-try:
-    model = joblib.load(MODEL_PATH)
-    print("Model loaded successfully!")
-except Exception as e:
-    print(f"Error loading model: {e}. Prediction endpoint will be disabled.")
-
-# ================================
-# Pre-calculate accuracy once at startup
-# ================================
-real_accuracy = None
-if model:
+# ==========================
+# Calculate Real Accuracy
+# ==========================
+def calculate_real_accuracy():
     try:
+        if not os.path.exists(DATA_PATH):
+            raise FileNotFoundError(f"{DATA_PATH} does not exist!")
+
         df = pd.read_csv(DATA_PATH)
+        print("\n--- Debugging Accuracy Calculation ---")
         print("CSV Columns:", df.columns.tolist())
 
         # Detect target column automatically
@@ -92,79 +61,91 @@ if model:
         target_col = next((col for col in possible_targets if col in df.columns), df.columns[-1])
         print("Detected target column:", target_col)
 
-        # Fill missing features with 0
+        # Validate data
+        if df.empty:
+            raise ValueError("CSV file is empty!")
+
+        if target_col not in df.columns:
+            raise ValueError(f"Target column '{target_col}' not found in CSV!")
+
+        # Fill missing feature columns with 0
         for col in required_keys:
             if col not in df.columns:
+                print(f"Warning: Missing feature column -> {col}")
                 df[col] = 0
 
-        # Prepare data
+        # Prepare features and target
         X_test = df[required_keys].apply(pd.to_numeric, errors='coerce').fillna(0)
         y_test = df[target_col]
 
-        # If target column is text, map to numeric
-        if y_test.dtype == object or y_test.dtype == 'str':
-            y_test = y_test.map(reverse_class_map)
-        
-        # Ensure y_test has no NaN values after mapping
-        y_test = y_test.fillna(-1) # Use a placeholder value for missing labels
+        print("First 5 rows of target column:", y_test.head().tolist())
 
-        # Predict
+        if y_test.isnull().all():
+            raise ValueError("Target column has only null values!")
+
+        # If target labels are text, map them to numeric
+        if y_test.dtype == object or y_test.dtype == 'str':
+            print("Mapping text labels to numeric using reverse_class_map")
+            y_test = y_test.map(reverse_class_map)
+
+        print("First 5 mapped target values:", y_test.head().tolist())
+
+        # Predict using the model
         y_pred = model.predict(X_test)
-        
-        # Filter out rows where the target could not be mapped (y_test == -1)
-        valid_indices = y_test != -1
-        y_test_valid = y_test[valid_indices]
-        y_pred_valid = y_pred[valid_indices]
-        
-        # Calculate accuracy only on valid data
-        real_accuracy_value = accuracy_score(y_test_valid, y_pred_valid) * 100
+        print("First 5 predictions:", y_pred[:5].tolist())
+
+        # Calculate accuracy
+        real_accuracy_value = accuracy_score(y_test, y_pred) * 100
         real_accuracy = round(real_accuracy_value, 2)
-        print(f"Real Accuracy: {real_accuracy}%")
-        print("Note: If the accuracy is 100%, it might mean the test data is the same as the training data.")
+        print(f"Calculated Real Accuracy: {real_accuracy}%")
+
+        return real_accuracy
 
     except Exception as e:
-        print("Error calculating accuracy:", e)
-        real_accuracy = None
+        print("Error calculating real accuracy:", str(e))
+        return None
 
-
-@app.route("/", methods=["GET"])
-def home():
-    return jsonify({"message": "Transport ML Model API is running!"})
-
-
+# ==========================
+# Prediction Endpoint
+# ==========================
 @app.route("/predict", methods=["POST"])
 def predict():
     if model is None:
-        return jsonify({"error": "Model not loaded. Please check the model file path and name."}), 500
+        return jsonify({"error": "Model not loaded!"}), 500
 
     try:
         data = request.get_json()
-        if not data:
-            return jsonify({"error": "Invalid JSON data provided"}), 400
+        print("\nIncoming request data:", data)
 
-        # Validate input
-        missing_keys = [key for key in required_keys if key not in data]
-        if missing_keys:
-            return jsonify({"error": "Missing input fields", "missing_keys": missing_keys}), 400
+        # Ensure all required features are present
+        input_features = []
+        for key in required_keys:
+            if key not in data:
+                return jsonify({"error": f"Missing feature: {key}"}), 400
+            input_features.append(float(data[key]))
 
-        # Prepare features for single prediction
-        features = np.array([[data[key] for key in required_keys]])
-        pred_numeric = model.predict(features)[0]
-        pred_label = class_map.get(pred_numeric, "Unknown")
+        # Convert to numpy array
+        input_array = np.array([input_features])
 
-        # Format accuracy
-        formatted_accuracy = f"{real_accuracy}%" if real_accuracy is not None else "N/A"
+        # Make prediction
+        prediction = model.predict(input_array)[0]
+        prediction_label = class_map.get(prediction, "Unknown")
+
+        # Calculate real accuracy
+        real_accuracy = calculate_real_accuracy()
 
         return jsonify({
-            "accuracy": formatted_accuracy,
-            "prediction": pred_label
+            "accuracy": f"{real_accuracy:.2f}%" if real_accuracy is not None else "N/A",
+            "prediction": prediction_label
         })
 
     except Exception as e:
-        # Provide a more specific error message
-        return jsonify({"error": f"Prediction error: {str(e)}. Please check your input data format."}), 500
+        print("Prediction error:", str(e))
+        return jsonify({"error": str(e)}), 500
 
-
+# ==========================
+# Run Flask
+# ==========================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port, debug=True)
