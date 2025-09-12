@@ -11,7 +11,7 @@ app = Flask(__name__)
 # Base paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "transport_model.pkl")
-TEST_DATA_PATH = os.path.join(BASE_DIR, "test.csv")
+TEST_DATA_PATH = os.path.join(BASE_DIR, "data1.csv")
 
 # Map numeric predictions to human-readable labels
 class_map = {
@@ -40,7 +40,7 @@ target_column = None
 
 try:
     test_df = pd.read_csv(TEST_DATA_PATH)
-    print("Columns in test.csv:", test_df.columns.tolist())
+    print("Columns in data1.csv:", test_df.columns.tolist())
 
     # Detect target column automatically
     possible_target_cols = ["target", "activity", "label", "Transport_Mode"]
