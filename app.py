@@ -1,87 +1,78 @@
-import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import LabelEncoder
-from flask import Flask, request, jsonify
+import os
+import joblib
 import numpy as np
-import logging
-from sklearn.metrics import accuracy_score
+from flask import Flask, request, jsonify
 
-app = Flask(__name__)  
-logging.basicConfig(level=logging.INFO)
+app = Flask(__name__)
 
-model = None
-le = None
-feature_names = None
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
-def train_model():
-    global model, le, feature_names
-    logging.info("Starting model training process...")
-    
-    try:
-        df = pd.read_csv('data1.csv')
-        
-        X = df.drop('target', axis=1)
-        y = df['target']
-        
-        feature_names = X.columns.tolist()
-        
-        le = LabelEncoder()
-        y_encoded = le.fit_transform(y)
-        
-        model = RandomForestClassifier(n_estimators=100, random_state=42)
-        model.fit(X, y_encoded)
-        
-        logging.info("Model training complete. Ready for predictions.")
-    except FileNotFoundError:
-        logging.error("data1.csv not found. Please ensure the file is in the same directory.")
-        return False
-    except Exception as e:
-        logging.error(f"An error occurred during training: {e}")
-        return False
-    
-    return True
+MODEL_PATH = os.path.join(BASE_DIR, "transport_model.pkl")
+
+print("=== DEBUG INFO ===")
+print("Current Working Directory:", os.getcwd())
+print("Files in Current Directory:", os.listdir(os.getcwd()))
+print("Absolute Model Path:", MODEL_PATH)
+print("===================")
+
+try:
+    model = joblib.load(MODEL_PATH)
+    print("Model loaded successfully!")
+except FileNotFoundError:
+    print("ERROR: transport_model.pkl not found!")
+    model = None
+except Exception as e:
+    print(f"ERROR loading model: {e}")
+    model = None
 
 
-@app.route('/')
+@app.route("/", methods=["GET"])
 def home():
-    return "🚀 Transport Mode Prediction API is running!"
+    return jsonify({"message": "Transport ML Model API is running!"})
 
 
-@app.route('/predict', methods=['POST'])
+@app.route("/predict", methods=["POST"])
 def predict():
+
     if model is None:
-        return jsonify({"error": "Model not trained. Please check the server logs."}), 500
-        
+        return jsonify({"error": "Model not trained or not found. Please check the server logs."}), 500
+
     try:
-        data = request.get_json(force=True)
-        
-        input_features = np.array([data[feature] for feature in feature_names]).reshape(1, -1)
-        
-        prediction_encoded = model.predict(input_features)[0]
-        prediction_proba = model.predict_proba(input_features)[0]
-        
-        confidence = prediction_proba[prediction_encoded]
-        
-        predicted_label = le.inverse_transform([prediction_encoded])[0]
-        
-        response_data = {
-            "results": [
-                {
-                    "Prediction": predicted_label,
-                    "Accuracy": f"{confidence * 100:.2f}%"
-                }
-            ]
-        }
-        
-        return jsonify(response_data)
-        
-    except KeyError as e:
-        return jsonify({"error": f"Missing feature in JSON payload: {e}"}), 400
+        data = request.get_json()
+
+        required_keys = [
+            "android.sensor.accelerometer#mean",
+            "android.sensor.accelerometer#min",
+            "android.sensor.accelerometer#max",
+            "android.sensor.accelerometer#std",
+            "android.sensor.gyroscope#mean",
+            "android.sensor.gyroscope#min",
+            "android.sensor.gyroscope#max",
+            "android.sensor.gyroscope#std",
+            "sound#mean",
+            "sound#min",
+            "sound#max",
+            "sound#std"
+        ]
+
+        missing_keys = [key for key in required_keys if key not in data]
+        if missing_keys:
+            return jsonify({
+                "error": "Missing input fields",
+                "missing_keys": missing_keys
+            }), 400
+
+        features = np.array([[data[key] for key in required_keys]])
+
+        prediction = model.predict(features)[0]
+
+        return jsonify({"prediction": str(prediction)})
+
     except Exception as e:
-        return jsonify({"error": f"An error occurred during prediction: {e}"}), 500
+        return jsonify({"error": f"An error occurred during prediction: {str(e)}"}), 500
 
 
-if __name__ == '__main__': 
-    if train_model():
-        app.run(debug=True)  
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
