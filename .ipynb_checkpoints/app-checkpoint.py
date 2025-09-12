@@ -43,6 +43,7 @@ def predict():
         data = request.get_json()
 
         required_keys = [
+            "time",
             "android.sensor.accelerometer#mean",
             "android.sensor.accelerometer#min",
             "android.sensor.accelerometer#max",
